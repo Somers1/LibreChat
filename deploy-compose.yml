@@ -48,12 +48,10 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
   mongodb:
     container_name: chat-mongodb
-    # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
-    #   - 27018:27017
+    ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
+       - 27018:27017
     image: mongo:8.0.17
     restart: always
-    ports:
-      - "27017:27017"
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
