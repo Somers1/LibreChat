@@ -1,10 +1,10 @@
 services:
   api:
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile.multi
-    #   target: api-build
-    image: registry.librechat.ai/danny-avila/librechat-dev-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+      target: api-build
+    image: somers1/librechat-api:inovayt
     container_name: LibreChat-API
     ports:
       - 3080:3080
@@ -23,6 +23,9 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      - BEDROCK_CACHE_MAX_POINTS=${BEDROCK_CACHE_MAX_POINTS:-4}
+      - BEDROCK_CACHE_MAX_TOOL_RESULT_POINTS=${BEDROCK_CACHE_MAX_TOOL_RESULT_POINTS:-3}
+      - BEDROCK_CACHE_TOOL_RESULT_MIN_CHARS=${BEDROCK_CACHE_TOOL_RESULT_MIN_CHARS:-6000}
     volumes:
       - type: bind
         source: ./librechat.yaml
