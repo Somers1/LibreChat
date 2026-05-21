@@ -47,6 +47,7 @@ export class MCPServersRegistry {
   private readonly allowedAddresses?: string[] | null;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
   private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
+  private readonly serverInstructionsCache = new Map<string, string>();
   private readonly pendingGetAllPromises = new Map<
     string,
     Promise<Record<string, t.ParsedServerConfig>>
@@ -142,24 +143,24 @@ export class MCPServersRegistry {
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
     if (configServers?.[serverName]) {
-      return configServers[serverName];
+      return this.withCachedServerInstructions(serverName, configServers[serverName]);
     }
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
 
     if (await this.readThroughCache.has(cacheKey)) {
-      return await this.readThroughCache.get(cacheKey);
+      return this.withCachedServerInstructions(serverName, await this.readThroughCache.get(cacheKey));
     }
 
     const configFromYaml = await this.cacheConfigsRepo.get(serverName);
     if (configFromYaml) {
       await this.readThroughCache.set(cacheKey, configFromYaml);
-      return configFromYaml;
+      return this.withCachedServerInstructions(serverName, configFromYaml);
     }
 
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
     await this.readThroughCache.set(cacheKey, configFromDB);
-    return configFromDB;
+    return this.withCachedServerInstructions(serverName, configFromDB);
   }
 
   /**
@@ -173,10 +174,40 @@ export class MCPServersRegistry {
     role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (configServers == null || !Object.keys(configServers).length) {
-      return this.getBaseServerConfigs(userId, role);
+      return this.withCachedServerInstructionsForAll(await this.getBaseServerConfigs(userId, role));
     }
     const base = await this.getBaseServerConfigs(userId, role);
-    return { ...configServers, ...base };
+    return this.withCachedServerInstructionsForAll({ ...configServers, ...base });
+  }
+
+  public cacheServerInstructions(serverName: string, instructions: string): void {
+    this.serverInstructionsCache.set(serverName, instructions);
+  }
+
+  private withCachedServerInstructions(
+    serverName: string,
+    config: t.ParsedServerConfig | undefined,
+  ): t.ParsedServerConfig | undefined {
+    const instructions = this.serverInstructionsCache.get(serverName);
+    if (!config || !instructions || !this.shouldUseServerInstructions(config.serverInstructions)) {
+      return config;
+    }
+    return { ...config, serverInstructions: instructions };
+  }
+
+  private withCachedServerInstructionsForAll(
+    configs: Record<string, t.ParsedServerConfig>,
+  ): Record<string, t.ParsedServerConfig> {
+    return Object.fromEntries(
+      Object.entries(configs).map(([serverName, config]) => [
+        serverName,
+        this.withCachedServerInstructions(serverName, config) ?? config,
+      ]),
+    );
+  }
+
+  private shouldUseServerInstructions(value: unknown): boolean {
+    return value === true || (typeof value === 'string' && value.toLowerCase().trim() === 'true');
   }
 
   /**
@@ -553,6 +584,7 @@ export class MCPServersRegistry {
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
+    this.serverInstructionsCache.clear();
     this.yamlServerNames = null;
     this.yamlServerNamesPromise = null;
   }

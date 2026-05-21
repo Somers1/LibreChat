@@ -101,6 +101,65 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('server instructions runtime cache', () => {
+    it('should overlay cached instructions for unresolved server instruction directives', async () => {
+      const oauthConfig = {
+        ...testParsedConfig,
+        requiresOAuth: true,
+        serverInstructions: true,
+      };
+      await registry['cacheConfigsRepo'].add('oauth_server', oauthConfig);
+      registry.cacheServerInstructions('oauth_server', 'Fetched OAuth instructions');
+
+      const config = await registry.getServerConfig('oauth_server');
+      const cachedConfig = await registry['cacheConfigsRepo'].get('oauth_server');
+
+      expect(config?.serverInstructions).toBe('Fetched OAuth instructions');
+      expect(config?.updatedAt).toBe(FIXED_TIME);
+      expect(cachedConfig?.serverInstructions).toBe(true);
+      expect(cachedConfig?.updatedAt).toBe(FIXED_TIME);
+    });
+
+    it('should overlay cached instructions in getAllServerConfigs', async () => {
+      await registry['cacheConfigsRepo'].add('oauth_server', {
+        ...testParsedConfig,
+        requiresOAuth: true,
+        serverInstructions: ' TRUE ',
+      });
+      registry.cacheServerInstructions('oauth_server', 'Fetched OAuth instructions');
+
+      const configs = await registry.getAllServerConfigs();
+
+      expect(configs.oauth_server.serverInstructions).toBe('Fetched OAuth instructions');
+    });
+
+    it('should not overwrite custom server instructions', async () => {
+      await registry['cacheConfigsRepo'].add('custom_server', {
+        ...testParsedConfig,
+        serverInstructions: 'Custom instructions',
+      });
+      registry.cacheServerInstructions('custom_server', 'Fetched OAuth instructions');
+
+      const config = await registry.getServerConfig('custom_server');
+
+      expect(config?.serverInstructions).toBe('Custom instructions');
+    });
+
+    it('should clear cached instructions on reset', async () => {
+      registry.cacheServerInstructions('oauth_server', 'Fetched OAuth instructions');
+      await registry.reset();
+      await registry['cacheConfigsRepo'].add('oauth_server', {
+        ...testParsedConfig,
+        requiresOAuth: true,
+        serverInstructions: true,
+      });
+
+      const config = await registry.getServerConfig('oauth_server');
+
+      expect(config?.serverInstructions).toBe(true);
+    });
+  });
+
   describe('reset', () => {
     it('should clear all servers from cache repository', async () => {
       // Add servers to cache using the new API

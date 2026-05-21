@@ -33,6 +33,7 @@ const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
   getOAuthServers: jest.fn(),
+  cacheServerInstructions: jest.fn(),
   shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
   getAllowedDomains: jest.fn().mockReturnValue(null),
   getAllowedAddresses: jest.fn().mockReturnValue(null),
@@ -291,6 +292,34 @@ describe('MCPManager', () => {
       expect(result).not.toContain('database');
     });
 
+    it('should ignore unresolved server instruction fetch directives', async () => {
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        oauthBoolean: {
+          type: 'sse',
+          url: 'https://oauth.example.com',
+          serverInstructions: true,
+        },
+        oauthString: {
+          type: 'sse',
+          url: 'https://oauth-string.example.com',
+          serverInstructions: ' True ',
+        },
+        github: {
+          type: 'sse',
+          url: 'https://api.github.com',
+          serverInstructions: 'Use GitHub API with care',
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.formatInstructionsForContext();
+
+      expect(result).toContain('Use GitHub API with care');
+      expect(result).not.toContain('oauthBoolean');
+      expect(result).not.toContain('oauthString');
+      expect(result).not.toContain('\ntrue\n');
+    });
+
     it('should return empty string when filtered servers have no instructions', async () => {
       (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         github: {
@@ -309,6 +338,43 @@ describe('MCPManager', () => {
       const result = await manager.formatInstructionsForContext(['files']);
 
       expect(result).toBe('');
+    });
+  });
+
+  describe('getUserConnection', () => {
+    it('should fetch and cache server instructions after establishing a user connection', async () => {
+      const mockUser = { id: userId, email: 'test@example.com' } as unknown as IUser;
+      const mockConfig = {
+        type: 'sse',
+        url: 'https://oauth.example.com',
+        requiresOAuth: true,
+        serverInstructions: true,
+      } as t.ParsedServerConfig;
+      const mockConnection = {
+        client: {
+          getInstructions: jest.fn().mockReturnValue('Fetched OAuth instructions'),
+        },
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        isStale: jest.fn().mockReturnValue(false),
+      } as unknown as MCPConnection;
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(mockConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.getUserConnection({ serverName, user: mockUser });
+
+      expect(result).toBe(mockConnection);
+      expect(mockConnection.client.getInstructions).toHaveBeenCalledTimes(1);
+      expect(mockConfig.serverInstructions).toBe('Fetched OAuth instructions');
+      expect(mockRegistryInstance.cacheServerInstructions).toHaveBeenCalledWith(
+        serverName,
+        'Fetched OAuth instructions',
+      );
     });
   });
 

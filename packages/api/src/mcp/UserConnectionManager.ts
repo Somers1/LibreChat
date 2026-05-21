@@ -189,6 +189,8 @@ export abstract class UserConnectionManager {
         throw new Error('Failed to establish connection after initialization attempt.');
       }
 
+      await this.cacheServerInstructions(serverName, config, connection);
+
       if (!this.userConnections.has(userId)) {
         this.userConnections.set(userId, new Map());
       }
@@ -211,6 +213,26 @@ export abstract class UserConnectionManager {
       this.removeUserConnection(userId, serverName);
       throw error; // Re-throw the error to the caller
     }
+  }
+
+  private async cacheServerInstructions(
+    serverName: string,
+    config: t.ParsedServerConfig,
+    connection: MCPConnection,
+  ): Promise<void> {
+    if (!this.shouldUseServerInstructions(config.serverInstructions)) return;
+    try {
+      const instructions = connection.client.getInstructions();
+      if (typeof instructions !== 'string' || !instructions) return;
+      config.serverInstructions = instructions;
+      MCPServersRegistry.getInstance().cacheServerInstructions(serverName, instructions);
+    } catch (error) {
+      logger.warn(`[MCP][${serverName}] Failed to fetch server instructions`, error);
+    }
+  }
+
+  private shouldUseServerInstructions(value: unknown): boolean {
+    return value === true || (typeof value === 'string' && value.toLowerCase().trim() === 'true');
   }
 
   /** Returns all connections for a specific user */

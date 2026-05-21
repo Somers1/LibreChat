@@ -209,8 +209,11 @@ export class MCPManager extends UserConnectionManager {
       configServers,
     );
     for (const [serverName, config] of Object.entries(configs)) {
-      if (config.serverInstructions != null) {
-        instructions[serverName] = config.serverInstructions as string;
+      if (
+        typeof config.serverInstructions === 'string' &&
+        config.serverInstructions.toLowerCase().trim() !== 'true'
+      ) {
+        instructions[serverName] = config.serverInstructions;
       }
     }
     if (!serverNames) return instructions;
